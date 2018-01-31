@@ -22,8 +22,11 @@ import com.yahoo.ycsb.generator.*;
 import com.yahoo.ycsb.generator.UniformLongGenerator;
 import com.yahoo.ycsb.measurements.Measurements;
 
+import com.github.davidmoten.geo.GeoHash;
+
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.*;
 
 /**
  * The core benchmark scenario. Represents a set of clients doing simple CRUD operations. The
@@ -63,7 +66,7 @@ import java.util.*;
  * order ("hashed") (default: hashed)
  * </ul>
  */
-public class FogstoreBenchmark extends CoreWorkload {
+public class FogstoreBenchmark extends Workload {
   /**
    * The name of the database table to run queries against.
    */
@@ -82,11 +85,30 @@ public class FogstoreBenchmark extends CoreWorkload {
   public static final String FIELD_COUNT_PROPERTY = "fieldcount";
 
   /**
+   * The name of column that stores the geohash
+   */
+  public static final String GEOHASH_COLUMN_NAME = "geohash";
+
+  /**
+   * The name of column that stores the timestamp
+   */
+  public static final String TIMESTAMP_COLUMN_NAME = "timestamp";
+
+  /**
+   *  The name of property that stores the Geohash precision
+   */
+  public static final String GEOHASH_PRECISION_PROPERTY = "geohashprecision";
+  /**
+   * Default value for the property storing geohash precision
+   */
+  public static final String GEOHASH_PRECISION_PROPERTY_DEFAULT = "8";
+
+  /**
    * Default number of fields in a record.
    */
-  public static final String FIELD_COUNT_PROPERTY_DEFAULT = "10";
+  //public static final String FIELD_COUNT_PROPERTY_DEFAULT = "10";
   
-  private List<String> fieldnames;
+  //private List<String> fieldnames;
 
   /**
    * The name of the property for the field length distribution. Options are "uniform", "zipfian"
@@ -96,39 +118,39 @@ public class FogstoreBenchmark extends CoreWorkload {
    * fieldlength property. If "histogram", then the histogram will be read from the filename
    * specified in the "fieldlengthhistogram" property.
    */
-  public static final String FIELD_LENGTH_DISTRIBUTION_PROPERTY = "fieldlengthdistribution";
+  //public static final String FIELD_LENGTH_DISTRIBUTION_PROPERTY = "fieldlengthdistribution";
 
   /**
    * The default field length distribution.
    */
-  public static final String FIELD_LENGTH_DISTRIBUTION_PROPERTY_DEFAULT = "constant";
+  //public static final String FIELD_LENGTH_DISTRIBUTION_PROPERTY_DEFAULT = "constant";
 
   /**
    * The name of the property for the length of a field in bytes.
    */
-  public static final String FIELD_LENGTH_PROPERTY = "fieldlength";
+  //public static final String FIELD_LENGTH_PROPERTY = "fieldlength";
 
   /**
    * The default maximum length of a field in bytes.
    */
-  public static final String FIELD_LENGTH_PROPERTY_DEFAULT = "100";
+  //public static final String FIELD_LENGTH_PROPERTY_DEFAULT = "100";
 
   /**
    * The name of a property that specifies the filename containing the field length histogram (only
    * used if fieldlengthdistribution is "histogram").
    */
-  public static final String FIELD_LENGTH_HISTOGRAM_FILE_PROPERTY = "fieldlengthhistogram";
+  //public static final String FIELD_LENGTH_HISTOGRAM_FILE_PROPERTY = "fieldlengthhistogram";
 
   /**
    * The default filename containing a field length histogram.
    */
-  public static final String FIELD_LENGTH_HISTOGRAM_FILE_PROPERTY_DEFAULT = "hist.txt";
+  //public static final String FIELD_LENGTH_HISTOGRAM_FILE_PROPERTY_DEFAULT = "hist.txt";
 
   /**
    * Generator object that produces field lengths.  The value of this depends on the properties that
    * start with "FIELD_LENGTH_".
    */
-  protected NumberGenerator fieldlengthgenerator;
+  //protected NumberGenerator fieldlengthgenerator;
 
   /**
    * The name of the property for deciding whether to read one field (false) or all fields (true) of
@@ -360,6 +382,9 @@ public class FogstoreBenchmark extends CoreWorkload {
   public static final String INSERTION_RETRY_INTERVAL = "core_workload_insertion_retry_interval";
   public static final String INSERTION_RETRY_INTERVAL_DEFAULT = "3";
 
+  protected int geohashPrecision;
+  protected Map<String, String> keyToGeohashMap;
+  protected Map<String, Long> lastTimestampMap;
   protected LocationGenerator locationGenerator;
   protected NumberGenerator keysequence;
   protected DiscreteGenerator operationchooser;
@@ -376,7 +401,7 @@ public class FogstoreBenchmark extends CoreWorkload {
 
   private Measurements measurements = Measurements.getMeasurements();
 
-  protected static NumberGenerator getFieldLengthGenerator(Properties p) throws WorkloadException {
+/*  protected static NumberGenerator getFieldLengthGenerator(Properties p) throws WorkloadException {
     NumberGenerator fieldlengthgenerator;
     String fieldlengthdistribution = p.getProperty(
         FIELD_LENGTH_DISTRIBUTION_PROPERTY, FIELD_LENGTH_DISTRIBUTION_PROPERTY_DEFAULT);
@@ -403,6 +428,15 @@ public class FogstoreBenchmark extends CoreWorkload {
     }
     return fieldlengthgenerator;
   }
+*/
+  protected void saveGeohashForKey(String key, String geohash) {
+    // TODO insert synchronization between threads here
+    keyToGeohashMap.put (key, geohash);
+  }
+
+  protected void updateLastTimestamp (String key, long lastTimestamp) {
+    lastTimestampMap.put (key, lastTimestamp);
+  }
 
   /**
    * Initialize the scenario.
@@ -411,7 +445,10 @@ public class FogstoreBenchmark extends CoreWorkload {
   @Override
   public void init(Properties p) throws WorkloadException {
     table = p.getProperty(TABLENAME_PROPERTY, TABLENAME_PROPERTY_DEFAULT);
-
+    keyToGeohashMap = new ConcurrentHashMap<String, String>();
+    lastTimestampMap = new ConcurrentHashMap<String, Long>();
+    geohashPrecision = Integer.parseInt(p.getProperty(GEOHASH_PRECISION_PROPERTY, GEOHASH_PRECISION_PROPERTY_DEFAULT));
+    /*
     fieldcount =
         Long.parseLong(p.getProperty(FIELD_COUNT_PROPERTY, FIELD_COUNT_PROPERTY_DEFAULT));
     fieldnames = new ArrayList<>();
@@ -419,6 +456,7 @@ public class FogstoreBenchmark extends CoreWorkload {
       fieldnames.add("field" + i);
     }
     fieldlengthgenerator = CoreWorkload.getFieldLengthGenerator(p);
+    */
 
     recordcount =
         Long.parseLong(p.getProperty(Client.RECORD_COUNT_PROPERTY, Client.DEFAULT_RECORD_COUNT));
@@ -456,13 +494,13 @@ public class FogstoreBenchmark extends CoreWorkload {
         p.getProperty(DATA_INTEGRITY_PROPERTY, DATA_INTEGRITY_PROPERTY_DEFAULT));
     // Confirm that fieldlengthgenerator returns a constant if data
     // integrity check requested.
-    if (dataintegrity && !(p.getProperty(
+/*    if (dataintegrity && !(p.getProperty(
         FIELD_LENGTH_DISTRIBUTION_PROPERTY,
         FIELD_LENGTH_DISTRIBUTION_PROPERTY_DEFAULT)).equals("constant")) {
       System.err.println("Must have constant field size to check data integrity.");
       System.exit(-1);
     }
-
+*/
     if (p.getProperty(INSERT_ORDER_PROPERTY, INSERT_ORDER_PROPERTY_DEFAULT).compareTo("hashed") == 0) {
       orderedinserts = false;
     } else if (requestdistrib.compareTo("exponential") == 0) {
@@ -518,6 +556,8 @@ public class FogstoreBenchmark extends CoreWorkload {
           Double.parseDouble(p.getProperty(HOTSPOT_OPN_FRACTION, HOTSPOT_OPN_FRACTION_DEFAULT));
       keychooser = new HotspotIntegerGenerator(insertstart, insertstart + insertcount - 1,
           hotsetfraction, hotopnfraction);
+    } else if (requestdistrib.equals("constant")) {
+      keychooser = new ConstantIntegerGenerator((int)insertstart);
     } else {
       throw new WorkloadException("Unknown request distribution \"" + requestdistrib + "\"");
     }
@@ -552,49 +592,37 @@ public class FogstoreBenchmark extends CoreWorkload {
     return prekey + value;
   }
 
-  /**
-   * Builds a value for a randomly chosen field.
-   */
-  private HashMap<String, ByteIterator> buildSingleValue(String key) {
-    HashMap<String, ByteIterator> value = new HashMap<>();
-
-    String fieldkey = fieldnames.get(fieldchooser.nextValue().intValue());
-    ByteIterator data;
-    if (dataintegrity) {
-      data = new StringByteIterator(buildDeterministicValue(key, fieldkey));
-    } else {
-      // fill with random data
-      data = new RandomByteIterator(fieldlengthgenerator.nextValue().longValue());
-    }
-    value.put(fieldkey, data);
-
-    return value;
+  protected String calculateGeohash(Location locn, int precision) {
+    return GeoHash.encodeHash(locn.getLatitude(), locn.getLongitude(), precision);
   }
-
   /**
    * Builds values for all fields.
    */
   private HashMap<String, ByteIterator> buildValues(String key) {
     HashMap<String, ByteIterator> values = new HashMap<>();
-    long time = System.nanoTime();
-    System.out.println("TIME = "+time);
-    for (String fieldkey : fieldnames) {
-      ByteIterator data;
-      if (dataintegrity) {
-        data = new StringByteIterator(buildDeterministicValue(key, fieldkey));
-      } else {
-        // fill with random data
-        data = new RandomByteIterator(fieldlengthgenerator.nextValue().longValue());
-      }
-      values.put(fieldkey, data);
+    String geohash = null;
+    if(keyToGeohashMap.containsKey(key)) {
+      geohash = keyToGeohashMap.get(key);
+    } else {
+      Location locn = locationGenerator.nextValue();
+      geohash = calculateGeohash(locn, geohashPrecision);
+      saveGeohashForKey(key, geohash);
     }
+    values.put(GEOHASH_COLUMN_NAME, new StringByteIterator(geohash));
+    
+    long numericTime = System.currentTimeMillis();
+    String time = Long.toString(numericTime);
+    updateLastTimestamp(key, numericTime);
+    //values.put(TIMESTAMP_COLUMN_NAME, new NumericByteIterator(time));
+    values.put(TIMESTAMP_COLUMN_NAME, new StringByteIterator(time));
+    System.out.println ("Created timestamp for key "+key+" = "+time);
     return values;
   }
 
   /**
    * Build a deterministic value given the key information.
    */
-  private String buildDeterministicValue(String key, String fieldkey) {
+  /*private String buildDeterministicValue(String key, String fieldkey) {
     int size = fieldlengthgenerator.nextValue().intValue();
     StringBuilder sb = new StringBuilder(size);
     sb.append(key);
@@ -607,7 +635,7 @@ public class FogstoreBenchmark extends CoreWorkload {
     sb.setLength(size);
 
     return sb.toString();
-  }
+  }*/
 
   /**
    * Do one insert operation. Because it will be called concurrently from multiple client threads,
@@ -695,7 +723,23 @@ public class FogstoreBenchmark extends CoreWorkload {
   protected void verifyRow(String key, HashMap<String, ByteIterator> cells) {
     Status verifyStatus = Status.OK;
     long startTime = System.nanoTime();
-    if (!cells.isEmpty()) {
+    if(!cells.isEmpty()) {
+      //long retrievedTs = ((NumericByteIterator)cells.get(TIMESTAMP_COLUMN_NAME)).getLong();
+      //long retrievedTs = Utils.bytesToLong(cells.get(TIMESTAMP_COLUMN_NAME).toArray());
+      long retrievedTs =Long.parseLong( cells.get(TIMESTAMP_COLUMN_NAME).toString());
+      if(lastTimestampMap.containsKey(key)) {
+        long expectedTs = lastTimestampMap.get(key);
+        System.out.println ("EXPECTED_TS:"+expectedTs+" RETRIEVED_TS:"+retrievedTs+" DIFF:"+(expectedTs-retrievedTs));
+//        if (expectedTs != retrievedTs)
+//          verifyStatus = Status.UNEXPECTED_STATE;
+      } else {
+//        System.out.println ("EXPECTED_TS:NOT_FOUND RETRIEVED_TS:"+retrievedTs);
+      }
+    } else {
+      verifyStatus = Status.ERROR;
+    }
+
+/*    if (!cells.isEmpty()) {
       for (Map.Entry<String, ByteIterator> entry : cells.entrySet()) {
         if (!entry.getValue().toString().equals(buildDeterministicValue(key, entry.getKey()))) {
           verifyStatus = Status.UNEXPECTED_STATE;
@@ -705,7 +749,7 @@ public class FogstoreBenchmark extends CoreWorkload {
     } else {
       // This assumes that null data is never valid
       verifyStatus = Status.ERROR;
-    }
+    }*/
     long endTime = System.nanoTime();
     measurements.measure("VERIFY", (int) (endTime - startTime) / 1000);
     measurements.reportStatus("VERIFY", verifyStatus);
@@ -733,23 +777,10 @@ public class FogstoreBenchmark extends CoreWorkload {
 
     HashSet<String> fields = null;
 
-    if (!readallfields) {
-      // read a random field
-      String fieldname = fieldnames.get(fieldchooser.nextValue().intValue());
-
-      fields = new HashSet<String>();
-      fields.add(fieldname);
-    } else if (dataintegrity) {
-      // pass the full field list if dataintegrity is on for verification
-      fields = new HashSet<String>(fieldnames);
-    }
-
     HashMap<String, ByteIterator> cells = new HashMap<String, ByteIterator>();
     db.read(table, keyname, fields, cells);
 
-    if (dataintegrity) {
-      verifyRow(keyname, cells);
-    }
+    verifyRow(keyname, cells);
   }
 
   public void doTransactionReadModifyWrite(DB db) {
@@ -759,29 +790,14 @@ public class FogstoreBenchmark extends CoreWorkload {
     String keyname = buildKeyName(keynum);
 
     HashSet<String> fields = null;
-
-    if (!readallfields) {
-      // read a random field
-      String fieldname = fieldnames.get(fieldchooser.nextValue().intValue());
-
-      fields = new HashSet<String>();
-      fields.add(fieldname);
-    }
-
     HashMap<String, ByteIterator> values;
 
-    if (writeallfields) {
-      // new data for all the fields
-      values = buildValues(keyname);
-    } else {
-      // update a random field
-      values = buildSingleValue(keyname);
-    }
+    // new data for all the fields
+    values = buildValues(keyname);
 
     // do the transaction
 
     HashMap<String, ByteIterator> cells = new HashMap<String, ByteIterator>();
-
 
     long ist = measurements.getIntendedtartTimeNs();
     long st = System.nanoTime();
@@ -791,9 +807,7 @@ public class FogstoreBenchmark extends CoreWorkload {
 
     long en = System.nanoTime();
 
-    if (dataintegrity) {
-      verifyRow(keyname, cells);
-    }
+    verifyRow(keyname, cells);
 
     measurements.measure("READ-MODIFY-WRITE", (int) ((en - st) / 1000));
     measurements.measureIntended("READ-MODIFY-WRITE", (int) ((en - ist) / 1000));
@@ -809,15 +823,6 @@ public class FogstoreBenchmark extends CoreWorkload {
     int len = scanlength.nextValue().intValue();
 
     HashSet<String> fields = null;
-
-    if (!readallfields) {
-      // read a random field
-      String fieldname = fieldnames.get(fieldchooser.nextValue().intValue());
-
-      fields = new HashSet<String>();
-      fields.add(fieldname);
-    }
-
     db.scan(table, startkeyname, len, fields, new Vector<HashMap<String, ByteIterator>>());
   }
 
@@ -829,13 +834,8 @@ public class FogstoreBenchmark extends CoreWorkload {
 
     HashMap<String, ByteIterator> values;
 
-    if (writeallfields) {
       // new data for all the fields
       values = buildValues(keyname);
-    } else {
-      // update a random field
-      values = buildSingleValue(keyname);
-    }
 
     db.update(table, keyname, values);
   }
