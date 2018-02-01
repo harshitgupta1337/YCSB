@@ -615,7 +615,7 @@ public class FogstoreBenchmark extends Workload {
     updateLastTimestamp(key, numericTime);
     //values.put(TIMESTAMP_COLUMN_NAME, new NumericByteIterator(time));
     values.put(TIMESTAMP_COLUMN_NAME, new StringByteIterator(time));
-    System.out.println ("Created timestamp for key "+key+" = "+time);
+    System.out.println ("curr_ts "+time+" gen_ts key "+key+" ts "+time);
     return values;
   }
 
@@ -726,14 +726,14 @@ public class FogstoreBenchmark extends Workload {
     if(!cells.isEmpty()) {
       //long retrievedTs = ((NumericByteIterator)cells.get(TIMESTAMP_COLUMN_NAME)).getLong();
       //long retrievedTs = Utils.bytesToLong(cells.get(TIMESTAMP_COLUMN_NAME).toArray());
-      long retrievedTs =Long.parseLong( cells.get(TIMESTAMP_COLUMN_NAME).toString());
+      //long retrievedTs =Long.parseLong( cells.get(TIMESTAMP_COLUMN_NAME).toString());
+      String retrievedTs = cells.get(TIMESTAMP_COLUMN_NAME).toString();
       if(lastTimestampMap.containsKey(key)) {
         long expectedTs = lastTimestampMap.get(key);
-        System.out.println ("EXPECTED_TS:"+expectedTs+" RETRIEVED_TS:"+retrievedTs+" DIFF:"+(expectedTs-retrievedTs));
-//        if (expectedTs != retrievedTs)
-//          verifyStatus = Status.UNEXPECTED_STATE;
+        System.out.println ("curr_ts "+System.currentTimeMillis() + " read_ts key "+key+" ret_ts "+ retrievedTs);
+        if (expectedTs != Long.parseLong(retrievedTs))
+          verifyStatus = Status.UNEXPECTED_STATE;
       } else {
-//        System.out.println ("EXPECTED_TS:NOT_FOUND RETRIEVED_TS:"+retrievedTs);
       }
     } else {
       verifyStatus = Status.ERROR;

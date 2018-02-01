@@ -21,7 +21,7 @@ LICENSE file.
 
   <groupId>com.yahoo.ycsb</groupId>
   <artifactId>root</artifactId>
-  <version>0.14.0-SNAPSHOT</version>
+  <version>0.14.0</version>
   <packaging>pom</packaging>
 
   <name>YCSB Root</name>
@@ -32,7 +32,7 @@ LICENSE file.
 
   <scm>
     <connection>scm:git:git://github.com/brianfrankcooper/YCSB.git</connection>
-    <tag>master</tag>
+    <tag>root-0.14.0</tag>
     <url>https://github.com/brianfrankcooper/YCSB</url>
   </scm>
   <dependencyManagement>
@@ -151,7 +151,7 @@ LICENSE file.
     <!--module>solr</module-->
     <!--module>solr6</module-->
     <!--module>tarantool</module-->
-    <!---<module>voldemort</module-->
+    <!--module>voldemort</module-->
   </modules>
 
   <build>
