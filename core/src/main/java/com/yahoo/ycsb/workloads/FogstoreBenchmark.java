@@ -720,7 +720,7 @@ public class FogstoreBenchmark extends Workload {
    * Bucket 1 means incorrect data was returned.
    * Bucket 2 means null data was returned when some data was expected.
    */
-  protected void verifyRow(String key, HashMap<String, ByteIterator> cells) {
+  protected void verifyRow(String key, HashMap<String, ByteIterator> cells, long startTimestamp) {
     Status verifyStatus = Status.OK;
     long startTime = System.nanoTime();
     if(!cells.isEmpty()) {
@@ -730,7 +730,7 @@ public class FogstoreBenchmark extends Workload {
       String retrievedTs = cells.get(TIMESTAMP_COLUMN_NAME).toString();
       if(lastTimestampMap.containsKey(key)) {
         long expectedTs = lastTimestampMap.get(key);
-        System.out.println ("curr_ts "+System.currentTimeMillis() + " read_ts key "+key+" ret_ts "+ retrievedTs);
+        System.out.println ("curr_ts "+System.currentTimeMillis() + " read_ts key "+key+" start_ts "+startTimestamp + " ret_ts "+ retrievedTs);
         if (expectedTs != Long.parseLong(retrievedTs))
           verifyStatus = Status.UNEXPECTED_STATE;
       } else {
@@ -778,9 +778,10 @@ public class FogstoreBenchmark extends Workload {
     HashSet<String> fields = null;
 
     HashMap<String, ByteIterator> cells = new HashMap<String, ByteIterator>();
+    long readStartTime = System.currentTimeMillis();
     db.read(table, keyname, fields, cells);
 
-    verifyRow(keyname, cells);
+    verifyRow(keyname, cells, readStartTime);
   }
 
   public void doTransactionReadModifyWrite(DB db) {
@@ -801,13 +802,14 @@ public class FogstoreBenchmark extends Workload {
 
     long ist = measurements.getIntendedtartTimeNs();
     long st = System.nanoTime();
+    long readStartTime = System.currentTimeMillis();
     db.read(table, keyname, fields, cells);
 
     db.update(table, keyname, values);
 
     long en = System.nanoTime();
 
-    verifyRow(keyname, cells);
+    verifyRow(keyname, cells, readStartTime);
 
     measurements.measure("READ-MODIFY-WRITE", (int) ((en - st) / 1000));
     measurements.measureIntended("READ-MODIFY-WRITE", (int) ((en - ist) / 1000));
