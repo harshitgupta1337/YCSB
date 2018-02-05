@@ -654,6 +654,12 @@ public class FogstoreBenchmark extends Workload {
     int numOfRetries = 0;
     do {
       status = db.insert(table, dbkey, values);
+      
+      // Now need to log the completion time of the insert along with the TS value that got inserted
+      long currentTime = System.currentTimeMillis();
+      System.out.println ("curr_ts "+currentTime+" finish_insert key "+dbkey
+                          +" ts "+((StringByteIterator)values.get(TIMESTAMP_COLUMN_NAME)).toString());
+
       if (null != status && status.isOk()) {
         break;
       }
@@ -809,6 +815,11 @@ public class FogstoreBenchmark extends Workload {
     db.read(table, keyname, fields, cells);
 
     db.update(table, keyname, values);
+    // Now need to log the completion time of the update along with the TS value that got inserted
+    long currentTime = System.currentTimeMillis();
+    System.out.println ("curr_ts "+currentTime+" finish_update key "+keyname
+                        +" ts "+((StringByteIterator)values.get(TIMESTAMP_COLUMN_NAME)).toString());
+
 
     long en = System.nanoTime();
 
@@ -843,6 +854,11 @@ public class FogstoreBenchmark extends Workload {
       values = buildValues(keyname);
 
     db.update(table, keyname, values);
+    // Now need to log the completion time of the update along with the TS value that got inserted
+    long currentTime = System.currentTimeMillis();
+    System.out.println ("curr_ts "+currentTime+" finish_update key "+keyname
+                        +" ts "+((StringByteIterator)values.get(TIMESTAMP_COLUMN_NAME)).toString());
+
   }
 
   public void doTransactionInsert(DB db) {
