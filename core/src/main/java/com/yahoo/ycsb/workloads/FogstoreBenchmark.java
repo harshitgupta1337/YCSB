@@ -398,7 +398,7 @@ public class FogstoreBenchmark extends Workload {
   protected int zeropadding;
   protected int insertionRetryLimit;
   protected int insertionRetryInterval;
-
+  protected long workloadStartTime;
   private Measurements measurements = Measurements.getMeasurements();
 
 /*  protected static NumberGenerator getFieldLengthGenerator(Properties p) throws WorkloadException {
@@ -444,6 +444,7 @@ public class FogstoreBenchmark extends Workload {
    */
   @Override
   public void init(Properties p) throws WorkloadException {
+    workloadStartTime = System.currentTimeMillis();
     table = p.getProperty(TABLENAME_PROPERTY, TABLENAME_PROPERTY_DEFAULT);
     keyToGeohashMap = new ConcurrentHashMap<String, String>();
     lastTimestampMap = new ConcurrentHashMap<String, Long>();
@@ -730,6 +731,8 @@ public class FogstoreBenchmark extends Workload {
       String retrievedTs = cells.get(TIMESTAMP_COLUMN_NAME).toString();
       if(lastTimestampMap.containsKey(key)) {
         long expectedTs = lastTimestampMap.get(key);
+        if (Long.parseLong(retrievedTs) < workloadStartTime)
+            return;
         System.out.println ("curr_ts "+System.currentTimeMillis() + " read_ts key "+key+" start_ts "+startTimestamp + " ret_ts "+ retrievedTs);
         if (expectedTs != Long.parseLong(retrievedTs))
           verifyStatus = Status.UNEXPECTED_STATE;
