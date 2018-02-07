@@ -17,6 +17,7 @@
  */
 package com.yahoo.ycsb.db;
 
+import com.datastax.driver.core.policies.*;
 import com.datastax.driver.core.Cluster;
 import com.datastax.driver.core.ColumnDefinitions;
 import com.datastax.driver.core.ConsistencyLevel;
@@ -152,6 +153,7 @@ public class CassandraCQLClient extends DB {
               .withPort(Integer.valueOf(port)).addContactPoints(hosts).build();
         } else {
           cluster = Cluster.builder().withPort(Integer.valueOf(port))
+              .withLoadBalancingPolicy((LatencyAwarePolicy.builder(new RoundRobinPolicy())).build())
               .addContactPoints(hosts).build();
         }
 
