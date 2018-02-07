@@ -33,7 +33,9 @@ import com.datastax.driver.core.querybuilder.QueryBuilder;
 import com.datastax.driver.core.querybuilder.Select;
 import com.yahoo.ycsb.ByteArrayByteIterator;
 import com.yahoo.ycsb.ByteIterator;
+import com.yahoo.ycsb.StringByteIterator;
 import com.yahoo.ycsb.DB;
+import com.yahoo.ycsb.workloads.FogstoreBenchmark;
 import com.yahoo.ycsb.DBException;
 import com.yahoo.ycsb.Status;
 
@@ -292,6 +294,66 @@ public class CassandraCQLClient extends DB {
     }
 
   }
+
+  @Override
+  public Status read(String table, String key, Set<String> fields,
+      Map<String, ByteIterator> result, Map<String, ByteIterator> whereValues) {
+    
+    try {
+      Statement stmt;
+      Select.Builder selectBuilder;
+
+      if (fields == null) {
+        selectBuilder = QueryBuilder.select().all();
+      } else {
+        selectBuilder = QueryBuilder.select();
+        for (String col : fields) {
+          ((Select.Selection) selectBuilder).column(col);
+        }
+      }
+
+      String geohash = ((StringByteIterator) whereValues.get(FogstoreBenchmark.GEOHASH_COLUMN_NAME)).toString();
+      stmt = selectBuilder.from(table).where(QueryBuilder.eq(YCSB_KEY, key))
+          .and(QueryBuilder.eq(FogstoreBenchmark.GEOHASH_COLUMN_NAME, geohash))
+          .limit(1);
+      stmt.setConsistencyLevel(readConsistencyLevel);
+
+      if (debug) {
+        System.out.println(stmt.toString());
+      }
+      if (trace) {
+        stmt.enableTracing();
+      }
+
+      ResultSet rs = session.execute(stmt);
+
+      if (rs.isExhausted()) {
+        return Status.NOT_FOUND;
+      }
+
+      // Should be only 1 row
+      Row row = rs.one();
+      ColumnDefinitions cd = row.getColumnDefinitions();
+
+      for (ColumnDefinitions.Definition def : cd) {
+        ByteBuffer val = row.getBytesUnsafe(def.getName());
+        if (val != null) {
+          result.put(def.getName(), new ByteArrayByteIterator(val.array()));
+        } else {
+          result.put(def.getName(), null);
+        }
+      }
+
+      return Status.OK;
+
+    } catch (Exception e) {
+      e.printStackTrace();
+      System.out.println("Error reading key: " + key);
+      return Status.ERROR;
+    }
+
+  }
+
 
   /**
    * Perform a range scan for a set of records in the database. Each field/value

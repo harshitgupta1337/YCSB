@@ -111,48 +111,6 @@ public class FogstoreBenchmark extends Workload {
   //private List<String> fieldnames;
 
   /**
-   * The name of the property for the field length distribution. Options are "uniform", "zipfian"
-   * (favouring short records), "constant", and "histogram".
-   * <p>
-   * If "uniform", "zipfian" or "constant", the maximum field length will be that specified by the
-   * fieldlength property. If "histogram", then the histogram will be read from the filename
-   * specified in the "fieldlengthhistogram" property.
-   */
-  //public static final String FIELD_LENGTH_DISTRIBUTION_PROPERTY = "fieldlengthdistribution";
-
-  /**
-   * The default field length distribution.
-   */
-  //public static final String FIELD_LENGTH_DISTRIBUTION_PROPERTY_DEFAULT = "constant";
-
-  /**
-   * The name of the property for the length of a field in bytes.
-   */
-  //public static final String FIELD_LENGTH_PROPERTY = "fieldlength";
-
-  /**
-   * The default maximum length of a field in bytes.
-   */
-  //public static final String FIELD_LENGTH_PROPERTY_DEFAULT = "100";
-
-  /**
-   * The name of a property that specifies the filename containing the field length histogram (only
-   * used if fieldlengthdistribution is "histogram").
-   */
-  //public static final String FIELD_LENGTH_HISTOGRAM_FILE_PROPERTY = "fieldlengthhistogram";
-
-  /**
-   * The default filename containing a field length histogram.
-   */
-  //public static final String FIELD_LENGTH_HISTOGRAM_FILE_PROPERTY_DEFAULT = "hist.txt";
-
-  /**
-   * Generator object that produces field lengths.  The value of this depends on the properties that
-   * start with "FIELD_LENGTH_".
-   */
-  //protected NumberGenerator fieldlengthgenerator;
-
-  /**
    * The name of the property for deciding whether to read one field (false) or all fields (true) of
    * a record.
    */
@@ -384,6 +342,10 @@ public class FogstoreBenchmark extends Workload {
 
   protected int geohashPrecision;
   protected Map<String, String> keyToGeohashMap;
+  protected double maxLng;
+  protected double maxLat;
+  protected double minLat;
+  protected double minLng;
   protected Map<String, Long> lastTimestampMap;
   protected LocationGenerator locationGenerator;
   protected NumberGenerator keysequence;
@@ -399,6 +361,8 @@ public class FogstoreBenchmark extends Workload {
   protected int insertionRetryLimit;
   protected int insertionRetryInterval;
   protected long workloadStartTime;
+  protected long insertstart;
+  protected int insertcount;
   private Measurements measurements = Measurements.getMeasurements();
 
 /*  protected static NumberGenerator getFieldLengthGenerator(Properties p) throws WorkloadException {
@@ -473,9 +437,9 @@ public class FogstoreBenchmark extends Workload {
     String scanlengthdistrib =
         p.getProperty(SCAN_LENGTH_DISTRIBUTION_PROPERTY, SCAN_LENGTH_DISTRIBUTION_PROPERTY_DEFAULT);
 
-    long insertstart =
+    insertstart =
         Long.parseLong(p.getProperty(INSERT_START_PROPERTY, INSERT_START_PROPERTY_DEFAULT));
-    long insertcount=
+    insertcount=
         Integer.parseInt(p.getProperty(INSERT_COUNT_PROPERTY, String.valueOf(recordcount - insertstart)));
     // Confirm valid values for insertstart and insertcount in relation to recordcount
     if (recordcount < (insertstart + insertcount)) {
@@ -517,10 +481,10 @@ public class FogstoreBenchmark extends Workload {
     }
 
     if (locationdistrib.compareTo("uniform") == 0) {
-      double minLat = Double.parseDouble(p.getProperty (MIN_LATITUDE_PROPERTY, MIN_LATITUDE_PROPERTY_DEFAULT));
-      double minLng = Double.parseDouble(p.getProperty (MIN_LONGITUDE_PROPERTY, MIN_LONGITUDE_PROPERTY_DEFAULT));
-      double maxLat = Double.parseDouble(p.getProperty (MAX_LATITUDE_PROPERTY, MAX_LATITUDE_PROPERTY_DEFAULT));
-      double maxLng = Double.parseDouble(p.getProperty (MAX_LONGITUDE_PROPERTY, MAX_LONGITUDE_PROPERTY_DEFAULT));
+      minLat = Double.parseDouble(p.getProperty (MIN_LATITUDE_PROPERTY, MIN_LATITUDE_PROPERTY_DEFAULT));
+      minLng = Double.parseDouble(p.getProperty (MIN_LONGITUDE_PROPERTY, MIN_LONGITUDE_PROPERTY_DEFAULT));
+      maxLat = Double.parseDouble(p.getProperty (MAX_LATITUDE_PROPERTY, MAX_LATITUDE_PROPERTY_DEFAULT));
+      maxLng = Double.parseDouble(p.getProperty (MAX_LONGITUDE_PROPERTY, MAX_LONGITUDE_PROPERTY_DEFAULT));
       locationGenerator = new UniformLocationGenerator (minLat, maxLat, minLng, maxLng);
     }
 
@@ -596,21 +560,31 @@ public class FogstoreBenchmark extends Workload {
   protected String calculateGeohash(Location locn, int precision) {
     return GeoHash.encodeHash(locn.getLatitude(), locn.getLongitude(), precision);
   }
+
+  protected Location generateLocationForKeynum (long keynum) {
+    double fraction = ((keynum-insertstart)*1.0)/insertcount;
+    if (fraction > 0.5)
+      fraction = 0.5 - fraction;
+    double lat = minLat + (maxLat-minLat)*fraction;
+    double lng = minLng + (maxLng-minLng)*fraction;
+    return new Location(lat, lng);
+  }
+
   /**
    * Builds values for all fields.
    */
-  private HashMap<String, ByteIterator> buildValues(String key) {
+  private HashMap<String, ByteIterator> buildValues(String key, long keynum) {
     HashMap<String, ByteIterator> values = new HashMap<>();
     String geohash = null;
     if(keyToGeohashMap.containsKey(key)) {
       geohash = keyToGeohashMap.get(key);
     } else {
-      Location locn = locationGenerator.nextValue();
+      //Location locn = locationGenerator.nextValue();
+      Location locn = generateLocationForKeynum (keynum);
       geohash = calculateGeohash(locn, geohashPrecision);
       saveGeohashForKey(key, geohash);
     }
     values.put(GEOHASH_COLUMN_NAME, new StringByteIterator(geohash));
-    
     long numericTime = System.currentTimeMillis();
     String time = Long.toString(numericTime);
     updateLastTimestamp(key, numericTime);
@@ -648,7 +622,7 @@ public class FogstoreBenchmark extends Workload {
   public boolean doInsert(DB db, Object threadstate) {
     int keynum = keysequence.nextValue().intValue();
     String dbkey = buildKeyName(keynum);
-    HashMap<String, ByteIterator> values = buildValues(dbkey);
+    HashMap<String, ByteIterator> values = buildValues(dbkey, keynum);
 
     Status status;
     int numOfRetries = 0;
@@ -786,9 +760,21 @@ public class FogstoreBenchmark extends Workload {
 
     HashSet<String> fields = null;
 
+    String geohash = null;
+    if(keyToGeohashMap.containsKey(keyname)) {
+      geohash = keyToGeohashMap.get(keyname);
+    } else {
+      //Location locn = locationGenerator.nextValue();
+      Location locn = generateLocationForKeynum (keynum);
+      geohash = calculateGeohash(locn, geohashPrecision);
+      saveGeohashForKey(keyname, geohash);
+    }
+    Map<String, ByteIterator> values = new HashMap<String, ByteIterator>();
+    values.put (GEOHASH_COLUMN_NAME, new StringByteIterator(geohash));
+
     HashMap<String, ByteIterator> cells = new HashMap<String, ByteIterator>();
     long readStartTime = System.currentTimeMillis();
-    db.read(table, keyname, fields, cells);
+    db.read(table, keyname, fields, cells, values);
 
     verifyRow(keyname, cells, readStartTime);
   }
@@ -803,7 +789,7 @@ public class FogstoreBenchmark extends Workload {
     HashMap<String, ByteIterator> values;
 
     // new data for all the fields
-    values = buildValues(keyname);
+    values = buildValues(keyname, keynum);
 
     // do the transaction
 
@@ -812,7 +798,7 @@ public class FogstoreBenchmark extends Workload {
     long ist = measurements.getIntendedtartTimeNs();
     long st = System.nanoTime();
     long readStartTime = System.currentTimeMillis();
-    db.read(table, keyname, fields, cells);
+    db.read(table, keyname, fields, cells, values);
 
     db.update(table, keyname, values);
     // Now need to log the completion time of the update along with the TS value that got inserted
@@ -851,7 +837,7 @@ public class FogstoreBenchmark extends Workload {
     HashMap<String, ByteIterator> values;
 
       // new data for all the fields
-      values = buildValues(keyname);
+      values = buildValues(keyname, keynum);
 
     db.update(table, keyname, values);
     // Now need to log the completion time of the update along with the TS value that got inserted
@@ -868,7 +854,7 @@ public class FogstoreBenchmark extends Workload {
     try {
       String dbkey = buildKeyName(keynum);
 
-      HashMap<String, ByteIterator> values = buildValues(dbkey);
+      HashMap<String, ByteIterator> values = buildValues(dbkey, keynum);
       db.insert(table, dbkey, values);
     } finally {
       transactioninsertkeysequence.acknowledge(keynum);
