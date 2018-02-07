@@ -99,6 +99,11 @@ public class GoodBadUglyDB extends DB {
     return Status.OK;
   }
 
+  public Status read(String table, String key, Set<String> fields, Map<String, ByteIterator> result, Map<String, ByteIterator> whereValues) {
+    delay();
+    return Status.OK;
+  }
+
   /**
    * Perform a range scan for a set of records in the database. Each field/value pair from the result will be stored
    * in a HashMap.
