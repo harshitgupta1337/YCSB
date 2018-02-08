@@ -41,9 +41,12 @@ import com.yahoo.ycsb.DBException;
 import com.yahoo.ycsb.Status;
 
 import java.nio.ByteBuffer;
+import java.net.InetSocketAddress;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.Vector;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -87,6 +90,9 @@ public class CassandraCQLClient extends DB {
       "cassandra.connecttimeoutmillis";
   public static final String READ_TIMEOUT_MILLIS_PROPERTY =
       "cassandra.readtimeoutmillis";
+
+  public static final String WHITELIST_SERVERS_PROPERTY =
+      "cassandra.whitelisthosts";
 
   public static final String TRACING_PROPERTY = "cassandra.tracing";
   public static final String TRACING_PROPERTY_DEFAULT = "false";
@@ -152,9 +158,22 @@ public class CassandraCQLClient extends DB {
           cluster = Cluster.builder().withCredentials(username, password)
               .withPort(Integer.valueOf(port)).addContactPoints(hosts).build();
         } else {
-          cluster = Cluster.builder().withPort(Integer.valueOf(port))
-              .withLoadBalancingPolicy((LatencyAwarePolicy.builder(new RoundRobinPolicy())).build())
-              .addContactPoints(hosts).build();
+          List<InetSocketAddress> whitelist = new ArrayList<InetSocketAddress>();
+          String addresses[] = getProperties().getProperty(WHITELIST_SERVERS_PROPERTY, "").split(",");
+          int k;
+          for (k=0;k<addresses.length;k++) {
+            if (addresses[k].length() == 0) continue;
+            whitelist.add (new InetSocketAddress(addresses[k], Integer.valueOf(port)));
+          }
+          if (whitelist.size() == 0) {
+            cluster = Cluster.builder().withPort(Integer.valueOf(port))
+                .withLoadBalancingPolicy((LatencyAwarePolicy.builder(new RoundRobinPolicy())).build())
+                .addContactPoints(hosts).build();
+          } else {
+            cluster = Cluster.builder().withPort(Integer.valueOf(port))
+                .withLoadBalancingPolicy(new WhiteListPolicy ((LatencyAwarePolicy.builder(new RoundRobinPolicy())).build(), whitelist))
+                .addContactPoints(hosts).build();
+          }
         }
 
         String maxConnections = getProperties().getProperty(
