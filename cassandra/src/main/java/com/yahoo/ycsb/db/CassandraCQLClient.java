@@ -333,9 +333,9 @@ public class CassandraCQLClient extends DB {
         }
       }
 
-      String geohash = ((StringByteIterator) whereValues.get(FogstoreBenchmark.GEOHASH_COLUMN_NAME)).toString();
+      String partitionKey = ((StringByteIterator) whereValues.get(FogstoreBenchmark.PARTITION_KEY_COLUMN_NAME)).toString();
       stmt = selectBuilder.from(table).where(QueryBuilder.eq(YCSB_KEY, key))
-          .and(QueryBuilder.eq(FogstoreBenchmark.GEOHASH_COLUMN_NAME, geohash))
+          .and(QueryBuilder.eq(FogstoreBenchmark.PARTITION_KEY_COLUMN_NAME, partitionKey))
           .limit(1);
       stmt.setConsistencyLevel(readConsistencyLevel);
 
