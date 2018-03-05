@@ -722,17 +722,18 @@ public class FogstoreBenchmark extends Workload {
       //long retrievedTs = Utils.bytesToLong(cells.get(TIMESTAMP_COLUMN_NAME).toArray());
       //long retrievedTs =Long.parseLong( cells.get(TIMESTAMP_COLUMN_NAME).toString());
       String retrievedTs = cells.get(TIMESTAMP_COLUMN_NAME).toString();
+      String retrievedTime = retrievedTs.split("\\|")[1];
       if(lastTimestampMap.containsKey(key)) {
         long expectedTs = lastTimestampMap.get(key);
         try{
-          if (Long.parseLong(retrievedTs.split("|")[1]) < workloadStartTime)
+          if (Long.parseLong(retrievedTime) < workloadStartTime)
               return; 
         } catch (Exception e) {
           System.out.println ("Exception parsing retrievedTs : " + retrievedTs);
         }
         
         System.out.println ("curr_ts "+System.currentTimeMillis() + " read_ts key "+key+" start_ts "+startTimestamp + " ret_ts "+ retrievedTs);
-        if (expectedTs != Long.parseLong(retrievedTs))
+        if (expectedTs != Long.parseLong(retrievedTime))
           verifyStatus = Status.UNEXPECTED_STATE;
       } else {
       }
