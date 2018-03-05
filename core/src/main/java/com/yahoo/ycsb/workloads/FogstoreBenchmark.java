@@ -279,7 +279,6 @@ public class FogstoreBenchmark extends Workload {
    */
   public static final String ZERO_PADDING_PROPERTY_DEFAULT = "1";
 
-
   /**
    * The name of the property for the max scan length (number of records).
    */
@@ -343,6 +342,9 @@ public class FogstoreBenchmark extends Workload {
   public static final String INSERTION_RETRY_INTERVAL = "core_workload_insertion_retry_interval";
   public static final String INSERTION_RETRY_INTERVAL_DEFAULT = "3";
 
+  public static final String CLIENT_ID = "clientid";
+  public static final String CLIENT_ID_DEFAULT = "0";
+
   protected String partitionKeyType;
   protected int geohashPrecision;
   protected Map<String, String> keyToGeohashMap;
@@ -368,6 +370,7 @@ public class FogstoreBenchmark extends Workload {
   protected long workloadStartTime;
   protected long insertstart;
   protected int insertcount;
+  protected String clientId;
   private Measurements measurements = Measurements.getMeasurements();
 
   protected void saveGeohashForKey(String key, String geohash) {
@@ -396,6 +399,7 @@ public class FogstoreBenchmark extends Workload {
     keyToMurmurHashMap = new ConcurrentHashMap<String, String>();
     lastTimestampMap = new ConcurrentHashMap<String, Long>();
     geohashPrecision = Integer.parseInt(p.getProperty(GEOHASH_PRECISION_PROPERTY, GEOHASH_PRECISION_PROPERTY_DEFAULT));
+    clientId = p.getProperty(CLIENT_ID, CLIENT_ID_DEFAULT);
     recordcount =
         Long.parseLong(p.getProperty(Client.RECORD_COUNT_PROPERTY, Client.DEFAULT_RECORD_COUNT));
     if (recordcount == 0) {
@@ -596,10 +600,10 @@ public class FogstoreBenchmark extends Workload {
     values.put(PARTITION_KEY_COLUMN_NAME, new StringByteIterator(buildPartitionKeyValue(key, keynum)));
     long numericTime = System.currentTimeMillis();
     String time = Long.toString(numericTime);
+    String keyValue = clientId+"|"+time;
     updateLastTimestamp(key, numericTime);
-    //values.put(TIMESTAMP_COLUMN_NAME, new NumericByteIterator(time));
-    values.put(TIMESTAMP_COLUMN_NAME, new StringByteIterator(time));
-    System.out.println ("curr_ts "+time+" gen_ts key "+key+" ts "+time);
+    values.put(TIMESTAMP_COLUMN_NAME, new StringByteIterator(keyValue));
+    System.out.println ("curr_ts "+time+" gen_ts key "+key+" ts "+keyValue);
     return values;
   }
 
@@ -720,8 +724,13 @@ public class FogstoreBenchmark extends Workload {
       String retrievedTs = cells.get(TIMESTAMP_COLUMN_NAME).toString();
       if(lastTimestampMap.containsKey(key)) {
         long expectedTs = lastTimestampMap.get(key);
-        if (Long.parseLong(retrievedTs) < workloadStartTime)
-            return;
+        try{
+          if (Long.parseLong(retrievedTs.split("|")[1]) < workloadStartTime)
+              return; 
+        } catch (Exception e) {
+          System.out.println ("Exception parsing retrievedTs : " + retrievedTs);
+        }
+        
         System.out.println ("curr_ts "+System.currentTimeMillis() + " read_ts key "+key+" start_ts "+startTimestamp + " ret_ts "+ retrievedTs);
         if (expectedTs != Long.parseLong(retrievedTs))
           verifyStatus = Status.UNEXPECTED_STATE;
