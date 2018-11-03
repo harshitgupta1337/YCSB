@@ -35,6 +35,7 @@ import com.datastax.driver.core.querybuilder.Select;
 import com.yahoo.ycsb.ByteArrayByteIterator;
 import com.yahoo.ycsb.ByteIterator;
 import com.yahoo.ycsb.StringByteIterator;
+import com.yahoo.ycsb.NumericByteIterator;
 import com.yahoo.ycsb.DB;
 import com.yahoo.ycsb.workloads.FogstoreBenchmark;
 import com.yahoo.ycsb.DBException;
@@ -517,7 +518,15 @@ public class CassandraCQLClient extends DB {
       for (Map.Entry<String, ByteIterator> entry : values.entrySet()) {
         Object value;
         ByteIterator byteIterator = entry.getValue();
-        value = byteIterator.toString();
+        if (byteIterator instanceof NumericByteIterator) {
+          if (((NumericByteIterator)byteIterator).isFloatingPoint()) {
+            value = ((NumericByteIterator)byteIterator).getDouble();
+          } else {
+            value = ((NumericByteIterator)byteIterator).getLong();
+          }
+        } else {
+          value = byteIterator.toString();
+        }
 
         insertStmt.value(entry.getKey(), value);
       }
